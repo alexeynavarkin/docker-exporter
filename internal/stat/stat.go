@@ -11,6 +11,7 @@ import (
 	"github.com/alexeynavarkin/docker_exporter/internal/metric"
 	"github.com/alexeynavarkin/docker_exporter/internal/util"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/prometheus/client_golang/prometheus"
@@ -74,7 +75,7 @@ func (g *Gatherer) Gather() {
 
 	containers, err := g.cli.ContainerList(
 		context.Background(),
-		types.ContainerListOptions{
+		container.ListOptions{
 			Filters: filters.NewArgs(filters.Arg("status", "running")),
 		},
 	)

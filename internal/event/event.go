@@ -74,7 +74,7 @@ func (h *Handler) handleEvent(ev events.Message) {
 				ev.Actor.Attributes["name"],
 				util.GetMapValue(ev.Actor.Attributes, util.LabelNameServiceName, util.LabelDefaultValue),
 				util.GetMapValue(ev.Actor.Attributes, util.LabelNameServiceID, util.LabelDefaultValue),
-				ev.Action,
+				string(ev.Action),
 			)
 		}
 	}

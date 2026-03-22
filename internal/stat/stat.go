@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/alexeynavarkin/docker_exporter/internal/metric"
 	"github.com/alexeynavarkin/docker_exporter/internal/util"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -17,62 +16,47 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var labelsContainer = []string{"containerName", "serviceName", "serviceID", "type"}
-
 type response struct {
 	NetworkStats map[string]types.NetworkStats `json:"networks"`
 	MemStats     types.MemoryStats             `json:"memory_stats"`
 	CpuStats     types.CPUStats                `json:"cpu_stats"`
 }
 
+var (
+	labelNames = []string{"containerName", "serviceName", "serviceID", "type"}
+
+	descCPU = prometheus.NewDesc(
+		"docker_cpu_usage_ns_total",
+		"Cumulative container CPU usage in nanoseconds.",
+		labelNames, nil,
+	)
+	descMem = prometheus.NewDesc(
+		"docker_mem_usage_bytes",
+		"Container memory usage in bytes.",
+		labelNames, nil,
+	)
+	descNet = prometheus.NewDesc(
+		"docker_net_bytes_total",
+		"Cumulative container network I/O in bytes.",
+		labelNames, nil,
+	)
+)
+
 type Gatherer struct {
-	metricCpuStats *prometheus.GaugeVec
-	metricMemStats *prometheus.GaugeVec
-	metricNetStats *prometheus.GaugeVec
-
-	cli             *client.Client
-	metricCollector *metric.Collector
+	cli *client.Client
 }
 
-func NewGatherer(cli *client.Client, metricCollector *metric.Collector) *Gatherer {
-	return &Gatherer{
-		metricCpuStats: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: "docker",
-				Subsystem: "cpu",
-				Name:      "stat_ns",
-				Help:      "Container cpu usage.",
-			},
-			labelsContainer,
-		),
-		metricMemStats: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: "docker",
-				Subsystem: "mem",
-				Name:      "stat_bytes",
-				Help:      "Container memory usage.",
-			},
-			labelsContainer,
-		),
-		metricNetStats: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: "docker",
-				Subsystem: "net",
-				Name:      "stat_bytes",
-				Help:      "Container network usage.",
-			},
-			labelsContainer,
-		),
-		cli:             cli,
-		metricCollector: metricCollector,
-	}
+func NewGatherer(cli *client.Client) *Gatherer {
+	return &Gatherer{cli: cli}
 }
 
-func (g *Gatherer) Gather() {
-	g.metricCpuStats.Reset()
-	g.metricMemStats.Reset()
-	g.metricNetStats.Reset()
+func (g *Gatherer) Describe(ch chan<- *prometheus.Desc) {
+	ch <- descCPU
+	ch <- descMem
+	ch <- descNet
+}
 
+func (g *Gatherer) Collect(ch chan<- prometheus.Metric) {
 	containers, err := g.cli.ContainerList(
 		context.Background(),
 		container.ListOptions{
@@ -87,108 +71,50 @@ func (g *Gatherer) Gather() {
 	var wg sync.WaitGroup
 	wg.Add(len(containers))
 	for _, c := range containers {
-		fmt.Printf("collect stats for container %s\n", c.ID)
-		go g.collectContainer(c, &wg)
+		go func(c types.Container) {
+			defer wg.Done()
+			g.collectContainer(c, ch)
+		}(c)
 	}
 	wg.Wait()
-	fmt.Print("collect done\n")
 }
 
-func (g *Gatherer) collectContainer(c types.Container, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func (g *Gatherer) collectContainer(c types.Container, ch chan<- prometheus.Metric) {
 	stats, _ := g.cli.ContainerStats(context.Background(), c.ID, false)
 	data, _ := io.ReadAll(stats.Body)
 	var resp response
-	err := json.Unmarshal(data, &resp)
-	if err != nil {
+	if err := json.Unmarshal(data, &resp); err != nil {
 		return
 	}
 
 	containerName := strings.Join(c.Names, "")
+	svcName := util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue)
+	svcID := util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue)
 
-	m, _ := g.metricMemStats.GetMetricWith(
-		prometheus.Labels{
-			"containerName": containerName,
-			"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-			"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-			"type":          "used",
-		},
-	)
-	m.Set(float64(resp.MemStats.Usage))
+	label := func(t string) []string { return []string{containerName, svcName, svcID, t} }
 
-	m, _ = g.metricCpuStats.GetMetricWith(
-		prometheus.Labels{
-			"containerName": containerName,
-			"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-			"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-			"type":          "usermode",
-		},
-	)
-	m.Set(float64(resp.CpuStats.CPUUsage.UsageInUsermode))
-	m, _ = g.metricCpuStats.GetMetricWith(
-		prometheus.Labels{
-			"containerName": containerName,
-			"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-			"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-			"type":          "kernelmode",
-		},
-	)
-	m.Set(float64(resp.CpuStats.CPUUsage.UsageInKernelmode))
-	m, _ = g.metricCpuStats.GetMetricWith(
-		prometheus.Labels{
-			"containerName": containerName,
-			"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-			"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-			"type":          "throttled",
-		},
-	)
-	m.Set(float64(resp.CpuStats.ThrottlingData.ThrottledTime))
+	// Memory — gauge, current usage
+	ch <- prometheus.MustNewConstMetric(descMem, prometheus.GaugeValue,
+		float64(resp.MemStats.Usage), label("used")...)
 
+	// CPU — counter, absolute cumulative nanoseconds from Docker
+	ch <- prometheus.MustNewConstMetric(descCPU, prometheus.CounterValue,
+		float64(resp.CpuStats.CPUUsage.UsageInUsermode), label("usermode")...)
+	ch <- prometheus.MustNewConstMetric(descCPU, prometheus.CounterValue,
+		float64(resp.CpuStats.CPUUsage.UsageInKernelmode), label("kernelmode")...)
+	ch <- prometheus.MustNewConstMetric(descCPU, prometheus.CounterValue,
+		float64(resp.CpuStats.ThrottlingData.ThrottledTime), label("throttled")...)
+
+	// Network — counter, sum all interfaces, absolute cumulative bytes from Docker
+	var rx, tx, drop, errs uint64
 	for _, iface := range resp.NetworkStats {
-		m, _ = g.metricNetStats.GetMetricWith(
-			prometheus.Labels{
-				"containerName": containerName,
-				"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-				"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-				"type":          "rx",
-			},
-		)
-		m.Add((float64(iface.RxBytes)))
-		m, _ = g.metricNetStats.GetMetricWith(
-			prometheus.Labels{
-				"containerName": containerName,
-				"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-				"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-				"type":          "tx",
-			},
-		)
-		m.Add((float64(iface.TxBytes)))
-		m, _ = g.metricNetStats.GetMetricWith(
-			prometheus.Labels{
-				"containerName": containerName,
-				"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-				"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-				"type":          "drop",
-			},
-		)
-		m.Add((float64(iface.RxDropped + iface.TxDropped)))
-		m, _ = g.metricNetStats.GetMetricWith(
-			prometheus.Labels{
-				"containerName": containerName,
-				"serviceName":   util.GetMapValue(c.Labels, util.LabelNameServiceName, util.LabelDefaultValue),
-				"serviceID":     util.GetMapValue(c.Labels, util.LabelNameServiceID, util.LabelDefaultValue),
-				"type":          "error",
-			},
-		)
-		m.Add((float64(iface.RxErrors + iface.TxErrors)))
+		rx += iface.RxBytes
+		tx += iface.TxBytes
+		drop += iface.RxDropped + iface.TxDropped
+		errs += iface.RxErrors + iface.TxErrors
 	}
-}
-
-func (g *Gatherer) Metrics() []prometheus.Collector {
-	return []prometheus.Collector{
-		g.metricCpuStats,
-		g.metricMemStats,
-		g.metricNetStats,
-	}
+	ch <- prometheus.MustNewConstMetric(descNet, prometheus.CounterValue, float64(rx), label("rx")...)
+	ch <- prometheus.MustNewConstMetric(descNet, prometheus.CounterValue, float64(tx), label("tx")...)
+	ch <- prometheus.MustNewConstMetric(descNet, prometheus.CounterValue, float64(drop), label("drop")...)
+	ch <- prometheus.MustNewConstMetric(descNet, prometheus.CounterValue, float64(errs), label("error")...)
 }

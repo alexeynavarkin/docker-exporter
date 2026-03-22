@@ -10,17 +10,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type Gatherer interface {
-	Metrics() []prometheus.Collector
-	Gather()
-}
-
 type Collector struct {
 	event *prometheus.CounterVec
 
 	reg                *prometheus.Registry
 	defaultHandlerFunc http.Handler
-	gatherers          []Gatherer
 }
 
 func NewCollector() *Collector {
@@ -44,11 +38,8 @@ func NewCollector() *Collector {
 	return c
 }
 
-func (c *Collector) RegisterGatherer(gatherer Gatherer) {
-	for _, m := range gatherer.Metrics() {
-		c.reg.MustRegister(m)
-	}
-	c.gatherers = append(c.gatherers, gatherer)
+func (c *Collector) Register(collector prometheus.Collector) {
+	c.reg.MustRegister(collector)
 }
 
 func (c *Collector) RegisterEvent(containerName, serviceName, serviceID, eventType string) {
@@ -62,21 +53,9 @@ func (c *Collector) RegisterEvent(containerName, serviceName, serviceID, eventTy
 	).Inc()
 }
 
-func (c *Collector) handler() http.Handler {
-	h := func(w http.ResponseWriter, r *http.Request) {
-		for _, g := range c.gatherers {
-			fmt.Printf("invoke gatherer\n")
-			g.Gather()
-		}
-		fmt.Printf("invoke metric handler\n")
-		c.defaultHandlerFunc.ServeHTTP(w, r)
-	}
-	return http.HandlerFunc(h)
-}
-
 func (c *Collector) ExposeHTTP(ctx context.Context) {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", c.handler())
+	mux.Handle("/metrics", c.defaultHandlerFunc)
 
 	s := http.Server{
 		Addr:    ":8080",

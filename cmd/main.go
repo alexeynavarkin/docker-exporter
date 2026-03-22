@@ -25,8 +25,7 @@ func main() {
 
 	metricCollector := metric.NewCollector()
 
-	statGatherer := stat.NewGatherer(cli, metricCollector)
-	metricCollector.RegisterGatherer(statGatherer)
+	metricCollector.Register(stat.NewGatherer(cli))
 
 	evHandler := event.NewHandler(cli, metricCollector)
 

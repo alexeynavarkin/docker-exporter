@@ -29,7 +29,7 @@
         "includeAll": true,
         "allValue": ".+",
         "query": {
-          "query": "label_values(docker_mem_stat_bytes, instance)",
+          "query": "label_values(docker_mem_usage_bytes, instance)",
           "refId": "StandardVariableQuery"
         },
         "sort": 1
@@ -45,7 +45,7 @@
         "includeAll": true,
         "allValue": ".+",
         "query": {
-          "query": "label_values(docker_mem_stat_bytes{instance=~\"${target}\"}, containerName)",
+          "query": "label_values(docker_mem_usage_bytes{instance=~\"${target}\"}, containerName)",
           "refId": "StandardVariableQuery"
         },
         "sort": 1
@@ -61,7 +61,7 @@
         "includeAll": true,
         "allValue": ".+",
         "query": {
-          "query": "label_values(docker_mem_stat_bytes{instance=~\"${target}\"}, serviceName)",
+          "query": "label_values(docker_mem_usage_bytes{instance=~\"${target}\"}, serviceName)",
           "refId": "StandardVariableQuery"
         },
         "sort": 1
@@ -102,7 +102,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(count by (containerName) (docker_mem_stat_bytes{instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}))",
+          "expr": "count(count by (containerName) (docker_mem_usage_bytes{instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}))",
           "legendFormat": "Containers"
         }
       ]
@@ -151,7 +151,7 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "CPU Usage (usermode + kernelmode)",
+      "title": "CPU Usage Rate (cores)",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
       "options": {
@@ -160,7 +160,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ns",
+          "unit": "short",
+          "decimals": 3,
           "custom": { "lineWidth": 1, "fillOpacity": 5 }
         }
       },
@@ -168,7 +169,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "docker_cpu_stat_ns{type=\"usermode\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"} + ignoring(type) docker_cpu_stat_ns{type=\"kernelmode\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
+          "expr": "(rate(docker_cpu_usage_ns_total{type=\"usermode\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}[5m]) + ignoring(type) rate(docker_cpu_usage_ns_total{type=\"kernelmode\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}[5m])) / 1e9",
           "legendFormat": "{{containerName}} ({{instance}})"
         }
       ]
@@ -176,7 +177,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "CPU Throttled Time",
+      "title": "CPU Throttled Rate (cores)",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
       "options": {
@@ -185,7 +186,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ns",
+          "unit": "short",
+          "decimals": 3,
           "custom": { "lineWidth": 1, "fillOpacity": 5 },
           "color": { "mode": "palette-classic" }
         }
@@ -194,7 +196,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "docker_cpu_stat_ns{type=\"throttled\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
+          "expr": "rate(docker_cpu_usage_ns_total{type=\"throttled\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}[5m]) / 1e9",
           "legendFormat": "{{containerName}} ({{instance}})"
         }
       ]
@@ -226,7 +228,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "docker_mem_stat_bytes{type=\"used\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
+          "expr": "docker_mem_usage_bytes{type=\"used\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
           "legendFormat": "{{containerName}} ({{instance}})"
         }
       ]
@@ -241,7 +243,7 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Network Received (RX)",
+      "title": "Network Received Rate (RX)",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
       "options": {
@@ -250,7 +252,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "Bps",
           "custom": { "lineWidth": 1, "fillOpacity": 5 }
         }
       },
@@ -258,7 +260,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "docker_net_stat_bytes{type=\"rx\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
+          "expr": "rate(docker_net_bytes_total{type=\"rx\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}[5m])",
           "legendFormat": "{{containerName}} ({{instance}})"
         }
       ]
@@ -266,7 +268,7 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Network Transmitted (TX)",
+      "title": "Network Transmitted Rate (TX)",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
       "options": {
@@ -275,7 +277,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "Bps",
           "custom": { "lineWidth": 1, "fillOpacity": 5 }
         }
       },
@@ -283,7 +285,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "docker_net_stat_bytes{type=\"tx\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
+          "expr": "rate(docker_net_bytes_total{type=\"tx\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}[5m])",
           "legendFormat": "{{containerName}} ({{instance}})"
         }
       ]
@@ -291,7 +293,7 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Network Drops",
+      "title": "Network Drop Rate",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 },
       "options": {
@@ -300,7 +302,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "pps",
           "custom": { "lineWidth": 1, "fillOpacity": 5 },
           "color": { "mode": "fixed", "fixedColor": "orange" }
         }
@@ -309,7 +311,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "docker_net_stat_bytes{type=\"drop\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
+          "expr": "rate(docker_net_bytes_total{type=\"drop\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}[5m])",
           "legendFormat": "{{containerName}} ({{instance}})"
         }
       ]
@@ -317,7 +319,7 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Network Errors",
+      "title": "Network Error Rate",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 },
       "options": {
@@ -326,7 +328,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "pps",
           "custom": { "lineWidth": 1, "fillOpacity": 5 },
           "color": { "mode": "fixed", "fixedColor": "red" }
         }
@@ -335,7 +337,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "docker_net_stat_bytes{type=\"error\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}",
+          "expr": "rate(docker_net_bytes_total{type=\"error\", instance=~\"${target}\", containerName=~\"${container}\", serviceName=~\"${service}\"}[5m])",
           "legendFormat": "{{containerName}} ({{instance}})"
         }
       ]

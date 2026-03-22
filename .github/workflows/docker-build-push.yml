@@ -1,8 +1,8 @@
 name: Build and Push Docker Image
 
 on:
-  push:
-    tags: [ 'v*.*.*' ]
+  release:
+    types: [published]
 
 env:
   REGISTRY: docker.io
@@ -31,8 +31,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
@@ -41,5 +39,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
